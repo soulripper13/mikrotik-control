@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Mikrotik Router",
+        "description": "Please enter your router details.",
+        "data": {
+          "host": "IP Address or Hostname",
+          "username": "Username",
+          "password": "Password",
+          "port": "Port",
+          "use_ssl": "Use SSL (HTTPS/API-SSL)",
+          "verify_ssl": "Verify SSL Certificate"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect, please check your network and port details.",
+      "invalid_auth": "Invalid authentication credentials, please check username and password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Mikrotik Control Options",
+        "data": {
+          "scan_interval": "Update Interval (seconds)",
+          "enable_interface_details": "Create interface traffic and IP entities",
+          "enable_interface_controls": "Create interface control switches",
+          "enable_firewall_controls": "Create firewall rule switches",
+          "enable_script_buttons": "Create script run buttons",
+          "enable_container_controls": "Create container controls",
+          "enable_reboot_button": "Create reboot button"
+        }
+      }
+    }
+  }
+}

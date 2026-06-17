@@ -1,0 +1,6 @@
+{
+  "name": "Mikrotik Control",
+  "iot_class": "local_polling",
+  "homeassistant": "2024.1.0",
+  "render_readme": true
+}

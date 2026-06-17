@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local Home Assistant artifacts
+.storage/
+home-assistant.log*
+home-assistant_v2.db*

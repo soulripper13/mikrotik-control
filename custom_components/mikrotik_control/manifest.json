@@ -1,0 +1,12 @@
+{
+  "domain": "mikrotik_control",
+  "name": "Mikrotik Control",
+  "codeowners": ["@soulripper13"],
+  "config_flow": true,
+  "documentation": "https://github.com/soulripper13/mikrotik-control",
+  "issue_tracker": "https://github.com/soulripper13/mikrotik-control/issues",
+  "integration_type": "hub",
+  "requirements": ["librouteros>=3.4.1"],
+  "version": "1.0.0",
+  "iot_class": "local_polling"
+}
