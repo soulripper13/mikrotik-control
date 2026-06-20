@@ -1,5 +1,6 @@
 """Button platform for Mikrotik Control integration."""
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -9,15 +10,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_BACKUP_BEFORE_RISKY_ACTIONS,
     CONF_ENABLE_CONTAINER_CONTROLS,
     CONF_ENABLE_REBOOT_BUTTON,
     CONF_ENABLE_SCRIPT_BUTTONS,
+    DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
     DEFAULT_ENABLE_CONTAINER_CONTROLS,
     DEFAULT_ENABLE_REBOOT_BUTTON,
     DEFAULT_ENABLE_SCRIPT_BUTTONS,
     DOMAIN,
 )
-from .entity import MikrotikEntity
+from .entity import MikrotikEntity, safe_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,14 +51,19 @@ async def async_setup_entry(
         CONF_ENABLE_CONTAINER_CONTROLS,
         DEFAULT_ENABLE_CONTAINER_CONTROLS,
     )
+    backup_before_risky = entry.options.get(
+        CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+        DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
+    )
     entities = []
 
     # 1. System Reboot button
     if enable_reboot_button:
-        entities.append(_enable_by_option(MikrotikRebootButton(coordinator, entry.entry_id)))
+        entities.append(_enable_by_option(MikrotikRebootButton(coordinator, entry.entry_id, backup_before_risky)))
 
     # 2. Check Updates button
     entities.append(MikrotikCheckUpdatesButton(coordinator, entry.entry_id))
+    entities.append(MikrotikBackupButton(coordinator, entry.entry_id))
 
     # 3. Dynamic Script buttons
     if enable_script_buttons:
@@ -93,14 +101,17 @@ class MikrotikRebootButton(MikrotikButton):
     _attr_icon = "mdi:restart"
     _attr_entity_registry_enabled_default = False
 
-    def __init__(self, coordinator, entry_id):
+    def __init__(self, coordinator, entry_id, backup_before_risky=False):
         """Initialize reboot button."""
         super().__init__(coordinator, entry_id)
+        self.backup_before_risky = backup_before_risky
         self._attr_unique_id = f"{self.device_id}_reboot"
 
     async def async_press(self) -> None:
         """Press the button to reboot."""
         _LOGGER.warning("Reboot command sent to Mikrotik router: %s", self.host)
+        if self.backup_before_risky:
+            await self.coordinator.client.create_backup(_backup_name("pre-reboot"))
         await self.coordinator.client.reboot()
 
 
@@ -122,6 +133,23 @@ class MikrotikCheckUpdatesButton(MikrotikButton):
         await self.coordinator.async_request_refresh()
 
 
+class MikrotikBackupButton(MikrotikButton):
+    """Button to create a RouterOS backup."""
+
+    _attr_name = "Create Backup"
+    _attr_icon = "mdi:content-save-cog"
+
+    def __init__(self, coordinator, entry_id):
+        """Initialize backup button."""
+        super().__init__(coordinator, entry_id)
+        self._attr_unique_id = f"{self.device_id}_create_backup"
+
+    async def async_press(self) -> None:
+        """Create a RouterOS backup."""
+        await self.coordinator.client.create_backup(_backup_name("manual"))
+        await self.coordinator.async_request_refresh()
+
+
 class MikrotikScriptButton(MikrotikEntity, ButtonEntity):
     """Button representing a Mikrotik script (classified as control/none category)."""
 
@@ -135,7 +163,7 @@ class MikrotikScriptButton(MikrotikEntity, ButtonEntity):
         self.script_name = script_name
         self.script_id = script_id
         self._attr_name = f"Run Script: {script_name}"
-        self._attr_unique_id = f"{self.device_id}_script_{script_name}"
+        self._attr_unique_id = f"{self.device_id}_script_{safe_key(script_name)}"
 
     @property
     def _script_data(self):
@@ -181,7 +209,7 @@ class MikrotikContainerRestartButton(MikrotikEntity, ButtonEntity):
         container = self._container_data
         name = self._container_name(container)
         self._attr_name = f"Restart Container {name}"
-        self._attr_unique_id = f"{self.device_id}_container_{container_id}_restart"
+        self._attr_unique_id = f"{self.device_id}_container_{safe_key(container_id)}_restart"
 
     @staticmethod
     def _container_name(container):
@@ -227,3 +255,8 @@ class MikrotikContainerRestartButton(MikrotikEntity, ButtonEntity):
         """Restart the container."""
         await self.coordinator.client.restart_container(self.container_id)
         await self.coordinator.async_request_refresh()
+
+
+def _backup_name(prefix: str) -> str:
+    """Return a RouterOS-safe backup name."""
+    return f"ha-{prefix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"

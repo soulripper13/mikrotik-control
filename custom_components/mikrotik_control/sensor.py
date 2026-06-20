@@ -21,12 +21,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .const import (
+    CONF_ENABLE_CONFIG_AUDIT,
+    CONF_ENABLE_HEALTH_SCORE,
     CONF_ENABLE_INTERFACE_DETAILS,
+    CONF_ENABLE_WIREGUARD,
+    DEFAULT_ENABLE_CONFIG_AUDIT,
+    DEFAULT_ENABLE_HEALTH_SCORE,
     DEFAULT_ENABLE_INTERFACE_DETAILS,
+    DEFAULT_ENABLE_WIREGUARD,
+    DOMAIN,
 )
-from .entity import MikrotikEntity, has_interface_address, is_physical_interface
+from .entity import MikrotikEntity, has_interface_address, is_physical_interface, safe_key
+from .helpers import audit_findings, health_summary, wireguard_peer_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +76,9 @@ async def async_setup_entry(
         CONF_ENABLE_INTERFACE_DETAILS,
         DEFAULT_ENABLE_INTERFACE_DETAILS,
     )
+    enable_wireguard = entry.options.get(CONF_ENABLE_WIREGUARD, DEFAULT_ENABLE_WIREGUARD)
+    enable_health_score = entry.options.get(CONF_ENABLE_HEALTH_SCORE, DEFAULT_ENABLE_HEALTH_SCORE)
+    enable_config_audit = entry.options.get(CONF_ENABLE_CONFIG_AUDIT, DEFAULT_ENABLE_CONFIG_AUDIT)
     entities = []
 
     # 1. System Resource Sensors
@@ -126,6 +136,20 @@ async def async_setup_entry(
                             MikrotikInterfaceIpSensor(coordinator, entry.entry_id, interface["name"], "ipv6")
                         )
                     )
+
+    if enable_wireguard:
+        for peer in coordinator.data.get("wireguard_peers", []):
+            if ".id" in peer:
+                entities.extend([
+                    MikrotikWireGuardPeerTrafficSensor(coordinator, entry.entry_id, peer[".id"], "rx"),
+                    MikrotikWireGuardPeerTrafficSensor(coordinator, entry.entry_id, peer[".id"], "tx"),
+                ])
+
+    if enable_health_score:
+        entities.append(MikrotikHealthScoreSensor(coordinator, entry.entry_id))
+
+    if enable_config_audit:
+        entities.append(MikrotikConfigAuditSensor(coordinator, entry.entry_id))
 
     async_add_entities(entities)
 
@@ -292,7 +316,7 @@ class MikrotikFirmwareSensor(MikrotikSensor):
         super().__init__(coordinator, entry_id)
         self.key = key
         self._attr_name = f"Routerboard {label}"
-        self._attr_unique_id = f"{self.device_id}_routerboard_{key}"
+        self._attr_unique_id = f"{self.device_id}_routerboard_{safe_key(key)}"
 
     @property
     def native_value(self) -> Any:
@@ -310,7 +334,7 @@ class MikrotikHealthSensor(MikrotikSensor):
         super().__init__(coordinator, entry_id)
         self.sensor_name = name
         self._attr_name = name.replace("-", " ").title()
-        self._attr_unique_id = f"{self.device_id}_health_{name}"
+        self._attr_unique_id = f"{self.device_id}_health_{safe_key(name)}"
 
         # Assign device classes & units
         if "temp" in name:
@@ -347,7 +371,7 @@ class MikrotikHealthSensorV6(MikrotikSensor):
         super().__init__(coordinator, entry_id)
         self.key = key
         self._attr_name = key.replace("-", " ").title()
-        self._attr_unique_id = f"{self.device_id}_health_v6_{key}"
+        self._attr_unique_id = f"{self.device_id}_health_v6_{safe_key(key)}"
 
         if "temp" in key:
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -388,7 +412,7 @@ class MikrotikInterfaceTrafficSensor(MikrotikSensor):
         self.interface_name = interface_name
         self.direction = direction
         self._attr_name = f"Interface {interface_name} {direction.upper()} Traffic"
-        self._attr_unique_id = f"{self.device_id}_interface_{interface_name}_{direction}"
+        self._attr_unique_id = f"{self.device_id}_interface_{safe_key(interface_name)}_{direction}"
 
     @property
     def _interface_data(self):
@@ -426,7 +450,7 @@ class MikrotikInterfaceIpSensor(MikrotikSensor):
         self.interface_name = interface_name
         self.ip_version = ip_version  # "ipv4" or "ipv6"
         self._attr_name = f"Interface {interface_name} {ip_version.upper()}"
-        self._attr_unique_id = f"{self.device_id}_interface_{interface_name}_{ip_version}"
+        self._attr_unique_id = f"{self.device_id}_interface_{safe_key(interface_name)}_{ip_version}"
         self._attr_icon = "mdi:ip" if ip_version == "ipv4" else "mdi:ip-v6"
 
     @property
@@ -465,3 +489,104 @@ class MikrotikInterfaceIpSensor(MikrotikSensor):
             "addresses": cidr_addresses,
             "dynamic": any(dynamic_list) if dynamic_list else False,
         }
+
+
+class MikrotikWireGuardPeerTrafficSensor(MikrotikSensor):
+    """Representation of cumulative WireGuard peer traffic."""
+
+    _device_group = "wireguard"
+    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_native_unit_of_measurement = UnitOfInformation.BYTES
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator, entry_id, peer_id, direction):
+        """Initialize peer traffic sensor."""
+        super().__init__(coordinator, entry_id)
+        self.peer_id = peer_id
+        self.direction = direction
+        peer = self._peer_data or {}
+        self._attr_name = f"WireGuard {wireguard_peer_name(peer)} {direction.upper()} Traffic"
+        self._attr_unique_id = f"{self.device_id}_wireguard_peer_{safe_key(peer_id)}_{direction}"
+
+    @property
+    def _peer_data(self):
+        """Get latest peer data."""
+        for peer in self.coordinator.data.get("wireguard_peers", []):
+            if peer.get(".id") == self.peer_id:
+                return peer
+        return None
+
+    @property
+    def native_value(self) -> Any:
+        """Return cumulative peer traffic."""
+        peer = self._peer_data
+        if not peer:
+            return None
+        value = peer.get(f"{self.direction}") or peer.get(f"{self.direction}-byte")
+        if value is None:
+            value = peer.get(f"{self.direction}-bytes")
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return peer details."""
+        peer = self._peer_data
+        if not peer:
+            return {}
+        return {
+            "interface": peer.get("interface"),
+            "allowed_address": peer.get("allowed-address"),
+            "endpoint_address": peer.get("endpoint-address"),
+            "last_handshake": peer.get("last-handshake"),
+            "comment": peer.get("comment", ""),
+        }
+
+
+class MikrotikHealthScoreSensor(MikrotikSensor):
+    """Router health summary sensor."""
+
+    _attr_name = "Router Health"
+    _attr_icon = "mdi:heart-pulse"
+
+    def __init__(self, coordinator, entry_id):
+        """Initialize health score sensor."""
+        super().__init__(coordinator, entry_id)
+        self._attr_unique_id = f"{self.device_id}_router_health"
+
+    @property
+    def native_value(self) -> str:
+        """Return health state."""
+        state, _reasons = health_summary(self.coordinator.data)
+        return state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return health reasons."""
+        _state, reasons = health_summary(self.coordinator.data)
+        return {"reasons": reasons}
+
+
+class MikrotikConfigAuditSensor(MikrotikSensor):
+    """Lightweight RouterOS configuration audit sensor."""
+
+    _attr_name = "Config Audit"
+    _attr_icon = "mdi:shield-search"
+
+    def __init__(self, coordinator, entry_id):
+        """Initialize config audit sensor."""
+        super().__init__(coordinator, entry_id)
+        self._attr_unique_id = f"{self.device_id}_config_audit"
+
+    @property
+    def native_value(self) -> str:
+        """Return audit state."""
+        findings = audit_findings(self.coordinator.data)
+        return "issues" if findings else "clear"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return audit findings."""
+        return {"findings": audit_findings(self.coordinator.data)}

@@ -118,7 +118,7 @@ class MikrotikClient:
 
             # IP Addresses (IPv4 and IPv6)
             data["ipv4_addresses"] = self._get_all_sync("ip", "address")
-            data["ipv6_addresses"] = self._get_all_sync("ipv6", "address")
+            data["ipv6_addresses"] = self._get_all_sync("ipv6", "address", optional=True)
 
             # NAT Rules
             data["nat"] = self._get_all_sync("ip", "firewall", "nat")
@@ -133,11 +133,26 @@ class MikrotikClient:
             data["scripts"] = self._get_all_sync("system", "script")
 
             # Containers (RouterOS v7)
-            data["containers"] = self._get_all_sync("container")
+            data["containers"] = self._get_all_sync("container", optional=True)
 
             # Package Updates
             updates = self._get_all_sync("system", "package", "update")
             data["updates"] = updates[0] if updates else {}
+
+            # WireGuard (RouterOS v7)
+            data["wireguard_interfaces"] = self._get_all_sync("interface", "wireguard", optional=True)
+            data["wireguard_peers"] = self._get_all_sync("interface", "wireguard", "peers", optional=True)
+
+            # Netwatch
+            data["netwatch"] = self._get_all_sync("tool", "netwatch", optional=True)
+
+            # Services and users for lightweight security audit.
+            data["services"] = self._get_all_sync("ip", "service")
+            data["users"] = self._get_all_sync("user")
+
+            # Routes are used for WAN/gateway visibility when available.
+            data["routes"] = self._get_all_sync("ip", "route")
+            data["ipv6_routes"] = self._get_all_sync("ipv6", "route", optional=True)
 
             return data
 
@@ -150,7 +165,7 @@ class MikrotikClient:
         """Fetch all data."""
         return await self.hass.async_add_executor_job(self._fetch_data_sync)
 
-    def _get_all_sync(self, *path_parts):
+    def _get_all_sync(self, *path_parts, optional=False):
         """Fetch all items from a RouterOS path (synchronous)."""
         try:
             path = self.api.path(*path_parts)
@@ -162,7 +177,10 @@ class MikrotikClient:
                     items.append(dict(item))
             return items
         except TrapError as err:
-            _LOGGER.error("Trap error fetching path %s: %s", path_parts, err)
+            if optional:
+                _LOGGER.debug("Optional RouterOS path %s is unavailable: %s", path_parts, err)
+            else:
+                _LOGGER.error("Trap error fetching path %s: %s", path_parts, err)
             return []
 
     def _set_state_sync(self, enabled, *path_parts, item_id):
@@ -281,3 +299,62 @@ class MikrotikClient:
     async def check_updates(self):
         """Trigger package update check."""
         await self.hass.async_add_executor_job(self._check_updates_sync)
+
+    def _install_updates_sync(self):
+        """Install RouterOS package updates (synchronous)."""
+        if not self.api:
+            self._connect_sync()
+        try:
+            path = self.api.path("system", "package", "update")
+            for _ in path("install"):
+                pass
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
+            self.api = None
+            raise CannotConnect(err) from err
+
+    async def install_updates(self):
+        """Install RouterOS package updates."""
+        await self.hass.async_add_executor_job(self._install_updates_sync)
+
+    def _upgrade_routerboard_sync(self):
+        """Upgrade RouterBOARD firmware (synchronous)."""
+        if not self.api:
+            self._connect_sync()
+        try:
+            path = self.api.path("system", "routerboard")
+            for _ in path("upgrade"):
+                pass
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
+            self.api = None
+            raise CannotConnect(err) from err
+
+    async def upgrade_routerboard(self):
+        """Upgrade RouterBOARD firmware."""
+        await self.hass.async_add_executor_job(self._upgrade_routerboard_sync)
+
+    def _backup_sync(self, name):
+        """Create a RouterOS binary backup (synchronous)."""
+        if not self.api:
+            self._connect_sync()
+        try:
+            path = self.api.path("system", "backup")
+            for _ in path("save", name=name):
+                pass
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
+            self.api = None
+            raise CannotConnect(err) from err
+
+    async def create_backup(self, name):
+        """Create a RouterOS binary backup."""
+        await self.hass.async_add_executor_job(self._backup_sync, name)
+
+    async def set_wireguard_peer_state(self, item_id, enabled):
+        """Set WireGuard peer enabled/disabled state."""
+        await self.hass.async_add_executor_job(
+            self._set_state_sync,
+            enabled,
+            "interface",
+            "wireguard",
+            "peers",
+            item_id=item_id,
+        )

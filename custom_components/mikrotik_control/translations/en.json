@@ -29,12 +29,21 @@
         "title": "Mikrotik Control Options",
         "data": {
           "scan_interval": "Update Interval (seconds)",
+          "entity_preset": "Entity preset",
+          "enable_safe_mode": "Enable safe mode",
+          "backup_before_risky_actions": "Create backup before risky actions",
           "enable_interface_details": "Create interface traffic and IP entities",
           "enable_interface_controls": "Create interface control switches",
           "enable_firewall_controls": "Create firewall rule switches",
+          "enable_firewall_profiles": "Create firewall profile switches from comments",
+          "firewall_profile_prefix": "Firewall profile comment prefix",
           "enable_script_buttons": "Create script run buttons",
           "enable_container_controls": "Create container controls",
-          "enable_reboot_button": "Create reboot button"
+          "enable_reboot_button": "Create reboot button",
+          "enable_wireguard": "Create WireGuard peer entities",
+          "enable_netwatch": "Create Netwatch status entities",
+          "enable_health_score": "Create router health summary",
+          "enable_config_audit": "Create configuration audit sensor"
         }
       }
     }

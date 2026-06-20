@@ -6,22 +6,45 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNA
 from homeassistant.core import callback
 
 from .const import (
+    CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+    CONF_ENABLE_CONFIG_AUDIT,
     CONF_ENABLE_CONTAINER_CONTROLS,
     CONF_ENABLE_FIREWALL_CONTROLS,
+    CONF_ENABLE_FIREWALL_PROFILES,
+    CONF_ENABLE_HEALTH_SCORE,
     CONF_ENABLE_INTERFACE_CONTROLS,
     CONF_ENABLE_INTERFACE_DETAILS,
+    CONF_ENABLE_NETWATCH,
     CONF_ENABLE_REBOOT_BUTTON,
+    CONF_ENABLE_SAFE_MODE,
     CONF_ENABLE_SCRIPT_BUTTONS,
+    CONF_ENABLE_WIREGUARD,
+    CONF_ENTITY_PRESET,
+    CONF_FIREWALL_PROFILE_PREFIX,
     CONF_USE_SSL,
     CONF_VERIFY_SSL,
+    DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
+    DEFAULT_ENABLE_CONFIG_AUDIT,
     DEFAULT_ENABLE_CONTAINER_CONTROLS,
     DEFAULT_ENABLE_FIREWALL_CONTROLS,
+    DEFAULT_ENABLE_FIREWALL_PROFILES,
+    DEFAULT_ENABLE_HEALTH_SCORE,
     DEFAULT_ENABLE_INTERFACE_CONTROLS,
     DEFAULT_ENABLE_INTERFACE_DETAILS,
+    DEFAULT_ENABLE_NETWATCH,
     DEFAULT_ENABLE_REBOOT_BUTTON,
+    DEFAULT_ENABLE_SAFE_MODE,
     DEFAULT_ENABLE_SCRIPT_BUTTONS,
+    DEFAULT_ENABLE_WIREGUARD,
+    DEFAULT_ENTITY_PRESET,
+    DEFAULT_FIREWALL_PROFILE_PREFIX,
     DEFAULT_PORT,
     DOMAIN,
+    ENTITY_PRESETS,
+    PRESET_ADVANCED,
+    PRESET_FULL,
+    PRESET_MINIMAL,
+    PRESET_RECOMMENDED,
 )
 from .mikrotik_client import CannotConnect, InvalidAuth, MikrotikClient
 
@@ -103,6 +126,9 @@ class MikrotikControlOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        preset = self._config_entry.options.get(CONF_ENTITY_PRESET, DEFAULT_ENTITY_PRESET)
+        defaults = _preset_defaults(preset)
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
@@ -111,46 +137,156 @@ class MikrotikControlOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self._config_entry.options.get("scan_interval", 30),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
                 vol.Optional(
+                    CONF_ENTITY_PRESET,
+                    default=preset,
+                ): vol.In(ENTITY_PRESETS),
+                vol.Optional(
+                    CONF_ENABLE_SAFE_MODE,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_SAFE_MODE,
+                        defaults[CONF_ENABLE_SAFE_MODE],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+                    default=self._config_entry.options.get(
+                        CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+                        defaults[CONF_BACKUP_BEFORE_RISKY_ACTIONS],
+                    ),
+                ): bool,
+                vol.Optional(
                     CONF_ENABLE_INTERFACE_DETAILS,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_INTERFACE_DETAILS,
-                        DEFAULT_ENABLE_INTERFACE_DETAILS,
+                        defaults[CONF_ENABLE_INTERFACE_DETAILS],
                     ),
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_INTERFACE_CONTROLS,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_INTERFACE_CONTROLS,
-                        DEFAULT_ENABLE_INTERFACE_CONTROLS,
+                        defaults[CONF_ENABLE_INTERFACE_CONTROLS],
                     ),
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_FIREWALL_CONTROLS,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_FIREWALL_CONTROLS,
-                        DEFAULT_ENABLE_FIREWALL_CONTROLS,
+                        defaults[CONF_ENABLE_FIREWALL_CONTROLS],
                     ),
                 ): bool,
+                vol.Optional(
+                    CONF_ENABLE_FIREWALL_PROFILES,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_FIREWALL_PROFILES,
+                        defaults[CONF_ENABLE_FIREWALL_PROFILES],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_FIREWALL_PROFILE_PREFIX,
+                    default=self._config_entry.options.get(
+                        CONF_FIREWALL_PROFILE_PREFIX,
+                        DEFAULT_FIREWALL_PROFILE_PREFIX,
+                    ),
+                ): str,
                 vol.Optional(
                     CONF_ENABLE_SCRIPT_BUTTONS,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_SCRIPT_BUTTONS,
-                        DEFAULT_ENABLE_SCRIPT_BUTTONS,
+                        defaults[CONF_ENABLE_SCRIPT_BUTTONS],
                     ),
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_CONTAINER_CONTROLS,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_CONTAINER_CONTROLS,
-                        DEFAULT_ENABLE_CONTAINER_CONTROLS,
+                        defaults[CONF_ENABLE_CONTAINER_CONTROLS],
                     ),
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_REBOOT_BUTTON,
                     default=self._config_entry.options.get(
                         CONF_ENABLE_REBOOT_BUTTON,
-                        DEFAULT_ENABLE_REBOOT_BUTTON,
+                        defaults[CONF_ENABLE_REBOOT_BUTTON],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_ENABLE_WIREGUARD,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_WIREGUARD,
+                        defaults[CONF_ENABLE_WIREGUARD],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_ENABLE_NETWATCH,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_NETWATCH,
+                        defaults[CONF_ENABLE_NETWATCH],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_ENABLE_HEALTH_SCORE,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_HEALTH_SCORE,
+                        defaults[CONF_ENABLE_HEALTH_SCORE],
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_ENABLE_CONFIG_AUDIT,
+                    default=self._config_entry.options.get(
+                        CONF_ENABLE_CONFIG_AUDIT,
+                        defaults[CONF_ENABLE_CONFIG_AUDIT],
                     ),
                 ): bool,
             }),
         )
+
+
+def _preset_defaults(preset: str) -> dict[str, bool]:
+    """Return default option values for an entity preset."""
+    defaults = {
+        CONF_ENABLE_SAFE_MODE: DEFAULT_ENABLE_SAFE_MODE,
+        CONF_BACKUP_BEFORE_RISKY_ACTIONS: DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
+        CONF_ENABLE_INTERFACE_DETAILS: DEFAULT_ENABLE_INTERFACE_DETAILS,
+        CONF_ENABLE_INTERFACE_CONTROLS: DEFAULT_ENABLE_INTERFACE_CONTROLS,
+        CONF_ENABLE_FIREWALL_CONTROLS: DEFAULT_ENABLE_FIREWALL_CONTROLS,
+        CONF_ENABLE_FIREWALL_PROFILES: DEFAULT_ENABLE_FIREWALL_PROFILES,
+        CONF_ENABLE_SCRIPT_BUTTONS: DEFAULT_ENABLE_SCRIPT_BUTTONS,
+        CONF_ENABLE_CONTAINER_CONTROLS: DEFAULT_ENABLE_CONTAINER_CONTROLS,
+        CONF_ENABLE_REBOOT_BUTTON: DEFAULT_ENABLE_REBOOT_BUTTON,
+        CONF_ENABLE_WIREGUARD: DEFAULT_ENABLE_WIREGUARD,
+        CONF_ENABLE_NETWATCH: DEFAULT_ENABLE_NETWATCH,
+        CONF_ENABLE_HEALTH_SCORE: DEFAULT_ENABLE_HEALTH_SCORE,
+        CONF_ENABLE_CONFIG_AUDIT: DEFAULT_ENABLE_CONFIG_AUDIT,
+    }
+
+    if preset == PRESET_MINIMAL:
+        defaults.update({
+            CONF_ENABLE_CONTAINER_CONTROLS: False,
+            CONF_ENABLE_FIREWALL_PROFILES: False,
+            CONF_ENABLE_WIREGUARD: False,
+            CONF_ENABLE_NETWATCH: False,
+        })
+    elif preset == PRESET_ADVANCED:
+        defaults.update({
+            CONF_ENABLE_INTERFACE_DETAILS: True,
+            CONF_ENABLE_FIREWALL_PROFILES: True,
+            CONF_ENABLE_WIREGUARD: True,
+            CONF_ENABLE_NETWATCH: True,
+        })
+    elif preset == PRESET_FULL:
+        defaults.update({
+            CONF_ENABLE_INTERFACE_DETAILS: True,
+            CONF_ENABLE_INTERFACE_CONTROLS: True,
+            CONF_ENABLE_FIREWALL_CONTROLS: True,
+            CONF_ENABLE_FIREWALL_PROFILES: True,
+            CONF_ENABLE_SCRIPT_BUTTONS: True,
+            CONF_ENABLE_CONTAINER_CONTROLS: True,
+            CONF_ENABLE_REBOOT_BUTTON: True,
+            CONF_ENABLE_WIREGUARD: True,
+            CONF_ENABLE_NETWATCH: True,
+        })
+    elif preset == PRESET_RECOMMENDED:
+        pass
+
+    return defaults

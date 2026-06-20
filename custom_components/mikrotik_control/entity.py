@@ -1,8 +1,15 @@
 """Base entity class for Mikrotik Control integration."""
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
-from .const import DOMAIN
+from .const import (
+    CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+    CONF_ENABLE_SAFE_MODE,
+    DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
+    DEFAULT_ENABLE_SAFE_MODE,
+    DOMAIN,
+)
 
 PHYSICAL_INTERFACE_TYPES = {
     "ether",
@@ -32,6 +39,30 @@ def has_interface_address(coordinator, interface_name: str, ip_version: str) -> 
         if address.get("address") and not is_enabled(address.get("disabled")):
             return True
     return False
+
+
+def safe_key(value) -> str:
+    """Return a stable entity-safe key from a RouterOS value."""
+    return slugify(str(value or "unknown"))
+
+
+def option_enabled(entry, key: str, default: bool) -> bool:
+    """Return a boolean option value."""
+    return entry.options.get(key, default)
+
+
+def safe_mode_enabled(entry) -> bool:
+    """Return true when extra safeguards should be applied."""
+    return option_enabled(entry, CONF_ENABLE_SAFE_MODE, DEFAULT_ENABLE_SAFE_MODE)
+
+
+def backup_before_risky_actions(entry) -> bool:
+    """Return true when risky operations should create a backup first."""
+    return option_enabled(
+        entry,
+        CONF_BACKUP_BEFORE_RISKY_ACTIONS,
+        DEFAULT_BACKUP_BEFORE_RISKY_ACTIONS,
+    )
 
 
 class MikrotikEntity(CoordinatorEntity):
