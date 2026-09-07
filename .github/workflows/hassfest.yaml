@@ -1,0 +1,24 @@
+name: Hassfest Validation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  hassfest:
+    name: Hassfest
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - name: Home Assistant Core Hassfest
+        uses: home-assistant/actions/hassfest@master
