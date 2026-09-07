@@ -4,9 +4,9 @@
   "codeowners": ["@soulripper13"],
   "config_flow": true,
   "documentation": "https://github.com/soulripper13/mikrotik-control",
-  "issue_tracker": "https://github.com/soulripper13/mikrotik-control/issues",
   "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/soulripper13/mikrotik-control/issues",
   "requirements": ["librouteros>=3.4.1"],
-  "version": "1.0.0",
-  "iot_class": "local_polling"
+  "version": "1.0.0"
 }
