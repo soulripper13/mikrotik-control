@@ -133,25 +133,47 @@ class MikrotikUpdateAvailableSensor(MikrotikBinarySensor):
 
     @property
     def is_on(self) -> bool:
-        """Return True if an update is available."""
+        """Return True if a RouterOS or RouterBOARD update is available."""
         updates = self.coordinator.data.get("updates", {})
         installed = updates.get("installed-version")
         latest = updates.get("latest-version")
-        
-        if installed and latest:
-            return installed != latest
-        return False
+        ros_update = bool(installed and latest and installed != latest)
+
+        routerboard = self.coordinator.data.get("routerboard", {})
+        rb_installed = routerboard.get("current-firmware")
+        rb_latest = routerboard.get("upgrade-firmware")
+        rb_update = bool(rb_installed and rb_latest and rb_installed != rb_latest)
+
+        return ros_update or rb_update
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return update details."""
         updates = self.coordinator.data.get("updates", {})
-        return {
+        routerboard = self.coordinator.data.get("routerboard", {})
+        rb_installed = routerboard.get("current-firmware")
+        rb_latest = routerboard.get("upgrade-firmware")
+
+        attrs = {
             "installed_version": updates.get("installed-version", "unknown"),
             "latest_version": updates.get("latest-version", "unknown"),
             "status": updates.get("status", "unknown"),
             "channel": updates.get("channel", "unknown"),
         }
+        if rb_installed and rb_latest:
+            attrs["routerboard_installed_firmware"] = rb_installed
+            attrs["routerboard_upgrade_firmware"] = rb_latest
+            attrs["routerboard_update_available"] = (rb_installed != rb_latest)
+
+        changelog = (
+            updates.get("changelog")
+            or updates.get("latest-changelog")
+            or updates.get("notes")
+            or updates.get("release-notes")
+        )
+        if changelog:
+            attrs["changelog"] = changelog
+        return attrs
 
 
 class MikrotikWireGuardPeerStaleSensor(MikrotikBinarySensor):

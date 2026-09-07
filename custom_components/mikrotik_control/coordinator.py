@@ -1,5 +1,5 @@
 """Data update coordinator for the Mikrotik Control integration."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -15,6 +15,7 @@ class MikrotikDataUpdateCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, client: MikrotikClient, scan_interval: int):
         """Initialize the coordinator."""
         self.client = client
+        self.pause_updates_until: datetime | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -22,8 +23,17 @@ class MikrotikDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=scan_interval),
         )
 
+    def pause_updates(self, seconds: int) -> None:
+        """Pause data fetching for a specified number of seconds."""
+        self.pause_updates_until = datetime.now() + timedelta(seconds=seconds)
+        _LOGGER.info("Data fetching paused for %s seconds", seconds)
+
     async def _async_update_data(self):
         """Fetch data from Mikrotik Router."""
+        if self.pause_updates_until and datetime.now() < self.pause_updates_until:
+            _LOGGER.debug("Skipping data fetch; coordinator is currently paused")
+            return self.data
+
         try:
             return await self.client.fetch_data()
         except CannotConnect as err:

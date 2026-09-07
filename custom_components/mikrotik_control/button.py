@@ -113,6 +113,9 @@ class MikrotikRebootButton(MikrotikButton):
         if self.backup_before_risky:
             await self.coordinator.client.create_backup(_backup_name("pre-reboot"))
         await self.coordinator.client.reboot()
+        
+        # Pause coordinator updates for 60 seconds to allow the router to reboot
+        self.coordinator.pause_updates(60)
 
 
 class MikrotikCheckUpdatesButton(MikrotikButton):

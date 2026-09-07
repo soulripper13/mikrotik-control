@@ -1,6 +1,7 @@
 """Mikrotik API client wrapper (Synchronous under the hood)."""
 import logging
 import ssl
+from datetime import datetime, timedelta
 from librouteros import connect
 from librouteros.exceptions import TrapError, FatalError, LibRouterosError
 
@@ -42,6 +43,7 @@ class MikrotikClient:
         self.use_ssl = use_ssl
         self.verify_ssl = verify_ssl
         self.api = None
+        self.last_update_check: datetime | None = None
 
     def _connect_sync(self):
         """Establish connection (synchronous, run inside executor)."""
@@ -136,7 +138,20 @@ class MikrotikClient:
             data["containers"] = self._get_all_sync("container", optional=True)
 
             # Package Updates
-            updates = self._get_all_sync("system", "package", "update")
+            try:
+                updates = self._get_all_sync("system", "package", "update")
+                needs_check = False
+                if not updates or "latest-version" not in (updates[0] if updates else {}):
+                    needs_check = True
+                elif self.last_update_check is None or (datetime.now() - self.last_update_check) > timedelta(hours=24):
+                    needs_check = True
+                
+                if needs_check:
+                    self._check_updates_sync()
+                    updates = self._get_all_sync("system", "package", "update")
+            except Exception as err:
+                _LOGGER.debug("Could not fetch package updates: %s", err)
+                updates = []
             data["updates"] = updates[0] if updates else {}
 
             # WireGuard (RouterOS v7)
@@ -292,9 +307,10 @@ class MikrotikClient:
             path = self.api.path("system", "package", "update")
             for _ in path("check-for-updates"):
                 pass
-        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
+            self.last_update_check = datetime.now()
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError, TrapError) as err:
+            _LOGGER.debug("Notice checking for Mikrotik updates: %s", err)
             self.api = None
-            raise CannotConnect(err) from err
 
     async def check_updates(self):
         """Trigger package update check."""
@@ -306,11 +322,16 @@ class MikrotikClient:
             self._connect_sync()
         try:
             path = self.api.path("system", "package", "update")
+            try:
+                for _ in path("check-for-updates"):
+                    pass
+            except Exception:
+                pass
             for _ in path("install"):
                 pass
-        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError, TrapError) as err:
+            _LOGGER.info("RouterOS package install command initiated, connection closed (expected during update/reboot): %s", err)
             self.api = None
-            raise CannotConnect(err) from err
 
     async def install_updates(self):
         """Install RouterOS package updates."""
@@ -324,9 +345,8 @@ class MikrotikClient:
             path = self.api.path("system", "routerboard")
             for _ in path("upgrade"):
                 pass
-        except (FatalError, LibRouterosError, ConnectionClosed, OSError) as err:
-            self.api = None
-            raise CannotConnect(err) from err
+        except (FatalError, LibRouterosError, ConnectionClosed, OSError, TrapError) as err:
+            _LOGGER.info("RouterBOARD firmware upgrade result / notice: %s", err)
 
     async def upgrade_routerboard(self):
         """Upgrade RouterBOARD firmware."""
